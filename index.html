@@ -119,6 +119,21 @@
   .kg-sub{font-size:13.5px;color:var(--muted);margin-top:6px}
   .kg-sub b{color:var(--ink);font-family:'IBM Plex Mono',monospace}
 
+  /* sacas + reais */
+  .money{
+    display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-top:18px;
+    background:var(--oat);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  }
+  .money-item{padding:14px 16px;background:var(--oat)}
+  .money-item + .money-item{box-shadow:-1px 0 0 var(--line)}
+  .money-item .mv{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:26px;line-height:1;color:var(--field)}
+  .money-item .mv.wine{color:var(--wine)}
+  .money-item .mk{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:5px}
+  @media(max-width:480px){
+    .money{grid-template-columns:1fr}
+    .money-item + .money-item{box-shadow:0 -1px 0 var(--line)}
+  }
+
   /* silo visual */
   .silo{width:118px;flex-shrink:0}
   .silo svg{width:100%;height:auto;display:block}
@@ -258,6 +273,15 @@
           <span class="unit">dias</span>
         </div>
       </div>
+
+      <div class="field">
+        <label class="lbl" for="preco">Preço da saca — 60 kg</label>
+        <div class="in-row">
+          <span class="unit" style="min-width:24px">R$</span>
+          <input type="number" id="preco" placeholder="informe o valor" min="0" step="1">
+        </div>
+        <div class="hint">Digite a cotação da cultura para ver o prejuízo em reais.</div>
+      </div>
     </section>
 
     <!-- ============ RESULTADO ============ -->
@@ -289,6 +313,17 @@
             <line x1="18" y1="120" x2="102" y2="120" stroke="var(--field)" stroke-width="1" opacity=".25"/>
           </svg>
           <div class="silo-cap" id="siloCap">perda no topo</div>
+        </div>
+      </div>
+
+      <div class="money">
+        <div class="money-item">
+          <div class="mv" id="sacasOut">—</div>
+          <div class="mk">Perda em sacas (60 kg)</div>
+        </div>
+        <div class="money-item">
+          <div class="mv wine" id="reaisOut">—</div>
+          <div class="mk">Prejuízo estimado</div>
         </div>
       </div>
 
@@ -426,12 +461,14 @@ function safeDays(grain, temp, hum){
 }
 
 /* ---------- Estado / DOM ---------- */
-const S = {grain:"soja", massa:1, temp:21, umid:14, dias:200};
+const S = {grain:"soja", massa:1, temp:21, umid:14, dias:200, preco:0};
 const $ = id=>document.getElementById(id);
 let chartTime=null, chartTemp=null;
 
 function fmt(n){ return n.toLocaleString('pt-BR',{maximumFractionDigits:0}); }
 function fmt1(n){ return n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}); }
+function fmtSacas(n){ const d = n>=100?0 : n>=10?1 : 2; return n.toLocaleString('pt-BR',{maximumFractionDigits:d}); }
+function fmtBRL(n){ return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 
 function compute(){
   const T = safeDays(S.grain, S.temp, S.umid);      // dias até 0,5%
@@ -439,8 +476,10 @@ function compute(){
   const dailyFrac = 0.005/T;                          // fração/dia
   const lossFrac = dailyFrac*S.dias;                  // fração perdida
   const lossKg = massaKg*lossFrac;
+  const sacas = lossKg/60;                             // 1 saca = 60 kg
+  const reais = sacas*S.preco;
   const lifePct = (S.dias/T)*100;
-  return {T, massaKg, dailyFrac, lossFrac, lossKg, lifePct};
+  return {T, massaKg, dailyFrac, lossFrac, lossKg, sacas, reais, lifePct};
 }
 
 function render(){
@@ -450,6 +489,10 @@ function render(){
   $("kgOut").innerHTML = fmt(r.lossKg)+' <small>kg</small>';
   $("massaOut").textContent = fmt(S.massa)+' t';
   $("pctOut").textContent = fmt1(r.lossFrac*100)+'%';
+
+  // sacas + reais
+  $("sacasOut").innerHTML = fmtSacas(r.sacas)+' <small style="font-size:.5em;color:var(--muted);font-weight:500">sc</small>';
+  $("reaisOut").textContent = S.preco>0 ? fmtBRL(r.reais) : '—';
 
   // stats
   $("tsegOut").textContent = fmt(r.T)+' d';
@@ -579,6 +622,7 @@ function bindNum(id,key,after){
 bindNum('massa','massa');
 bindNum('umid','umid');
 bindNum('dias','dias');
+bindNum('preco','preco');
 // temperatura: slider + input sincronizados
 $('temp').addEventListener('input',()=>{
   S.temp=parseFloat($('temp').value); $('tempN').value=S.temp;
