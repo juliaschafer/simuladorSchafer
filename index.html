@@ -358,7 +358,7 @@
 
   <footer class="note">
     <b>Como o cálculo é feito:</b> a partir do grão, da temperatura e da umidade, o simulador busca o <b>tempo seguro de armazenagem T</b> (dias até ~0,5% de perda de matéria seca) nas tabelas de referência, interpolando entre as faixas. A perda acumulada é <code>0,5% × (dias ÷ T)</code> e a perda em kg é <code>massa × perda%</code> — o mesmo modelo esboçado na sua planilha (<code>taxa/dia = 0,5% ÷ T</code>).<br>
-    <b>Grãos:</b> soja → NDSU, tabela de grãos de cereal (Tabela 1), referenciada a 14% (umidade de comercialização no Brasil); milho → Univ. Arkansas (FSA1058, Tabela 2); arroz e trigo → Univ. Arkansas (FSA1058, Tabela 4, que agrupa as duas culturas na mesma grade). Valores são <b>estimativas médias</b> e variam com cultivar, grãos quebrados/impurezas e as condições reais do silo. Fora das faixas das tabelas, os valores são limitados ao extremo mais próximo. É uma ferramenta de apoio à decisão, não uma garantia de grau comercial.
+    <b>Grãos:</b> soja → NDSU, tabela de grãos de cereal (Tabela 1), referenciada a 14% (umidade de comercialização no Brasil); milho → Univ. Arkansas (FSA1058, Tabela 2); arroz e trigo → Univ. Arkansas (FSA1058, Tabela 4, que agrupa as duas culturas na mesma grade). Valores são <b>estimativas médias</b> e variam com cultivar, grãos quebrados/impurezas e as condições reais do silo. Fora da faixa de temperatura das tabelas, o tempo seguro é extrapolado pela regra prática das fontes (a cada ±5,5 °C ele dobra no frio ou cai pela metade no calor); a umidade fora da faixa é limitada ao extremo mais próximo. É uma ferramenta de apoio à decisão, não uma garantia de grau comercial.
   </footer>
 
   <div class="credit">
@@ -437,7 +437,7 @@ const TABLES = {
   }
 };
 
-/* ---------- Interpolação bilinear (com clamp nas bordas) ---------- */
+/* ---------- Interpolação + extrapolação de temperatura ---------- */
 function bracket(arr, v){
   if(v<=arr[0]) return [0,0,0];
   if(v>=arr[arr.length-1]) return [arr.length-1,arr.length-1,0];
@@ -449,15 +449,30 @@ function bracket(arr, v){
   }
   return [arr.length-1,arr.length-1,0];
 }
+// dias seguros numa linha de temperatura, interpolando a umidade (com clamp de umidade)
+function daysAtHum(row, hums, hum){
+  const [hi,hj,hf] = bracket(hums, hum);
+  return row[hi] + (row[hj]-row[hi])*hf;
+}
 function safeDays(grain, temp, hum){
-  const t = TABLES[grain];
-  const [ti,tj,tf] = bracket(t.temps, temp);
-  const [hi,hj,hf] = bracket(t.hums, hum);
-  const g=t.grid;
-  const a=g[ti][hi], b=g[ti][hj], c=g[tj][hi], d=g[tj][hj];
-  const top = a+(b-a)*hf;
-  const bot = c+(d-c)*hf;
-  return Math.max(0.5, top+(bot-top)*tf);
+  const t = TABLES[grain], temps=t.temps, hums=t.hums, g=t.grid;
+  const tmin=temps[0], tmax=temps[temps.length-1];
+  const HALF=5.5; // °C para o tempo seguro dobrar (frio) / cair pela metade (calor)
+  let days;
+  if(temp < tmin){
+    // abaixo da faixa tabelada: mais frio -> mais tempo (regra prática das fontes)
+    days = daysAtHum(g[0], hums, hum) * Math.pow(2, (tmin-temp)/HALF);
+  } else if(temp > tmax){
+    // acima da faixa tabelada: mais quente -> menos tempo
+    days = daysAtHum(g[g.length-1], hums, hum) * Math.pow(2, (tmax-temp)/HALF);
+  } else {
+    // dentro da faixa: interpolação linear entre as duas linhas de temperatura
+    const [ti,tj,tf] = bracket(temps, temp);
+    const a = daysAtHum(g[ti], hums, hum);
+    const b = daysAtHum(g[tj], hums, hum);
+    days = a + (b-a)*tf;
+  }
+  return Math.max(0.5, Math.min(5000, days));
 }
 
 /* ---------- Estado / DOM ---------- */
